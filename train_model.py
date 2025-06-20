@@ -1,8 +1,8 @@
+from pydrive.auth import GoogleAuth
+from pydrive.drive import GoogleDrive
 import xgboost as xgb
 from sklearn.datasets import load_iris
 from sklearn.model_selection import train_test_split
-from pydrive.auth import GoogleAuth
-from pydrive.drive import GoogleDrive
 import os
 
 # Train model
@@ -12,10 +12,9 @@ model = xgb.XGBClassifier()
 model.fit(X_train, y_train)
 model.save_model("model.json")
 
-# Upload to Google Drive via service account
+# Upload to Google Drive
 gauth = GoogleAuth()
-gauth.LoadSettingsFile("settings.yml")  # <-- refers to your service config
-gauth.ServiceAuth()                      # <-- key step for service accounts
+gauth.ServiceAuth()  # No need to load settings manually
 drive = GoogleDrive(gauth)
 
 file = drive.CreateFile({'title': 'model.json', 'parents': [{'id': os.environ["GDRIVE_FOLDER_ID"]}]})
