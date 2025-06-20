@@ -10,3 +10,4 @@ pdfkit
 plotly
 python-dotenv
 yfinance
+fredapi
