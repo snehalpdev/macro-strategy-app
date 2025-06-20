@@ -17,9 +17,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install xgboost scikit-learn pydrive
+        run: pip install -r requirements.txt
 
       - name: Decode service account key
         run: |
