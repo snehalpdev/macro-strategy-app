@@ -23,7 +23,8 @@ jobs:
 
       - name: Decode service account key
         run: |
-          echo "${{ secrets.GDRIVE_CREDENTIALS_JSON }}" | base64 -d > client_secrets.json
+          echo "${{ secrets.GDRIVE_CREDENTIALS_JSON }}" | base64 --decode > client_secrets.json
+        shell: bash
 
       - name: Train and upload model
         run: python train_model.py
