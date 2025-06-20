@@ -13,17 +13,22 @@ def download_model(model_filename="model.json", folder_id=None):
         raise ValueError("❌ Google Drive folder ID is required.")
 
     try:
-        print("🔐 Authenticating with service account via GDRIVE_CREDENTIALS_JSON...")
+        print("🔐 Decoding service account credentials...")
         encoded = os.getenv("GDRIVE_CREDENTIALS_JSON")
         if not encoded:
             raise EnvironmentError("❌ GDRIVE_CREDENTIALS_JSON not found in environment.")
 
-        creds_dict = json.loads(base64.b64decode(encoded).decode())
+        creds_path = "temp_service_account.json"
+        with open(creds_path, "w") as f:
+            f.write(base64.b64decode(encoded).decode())
 
+        print("🔐 Authenticating with Google Drive...")
         gauth = GoogleAuth()
-        gauth.ServiceAuth(client_json_dict=creds_dict)  # ✅ This is the correct method
+        gauth.LoadServiceConfigFile(creds_path)
+        gauth.ServiceAuth()
         drive = GoogleDrive(gauth)
 
+        print("🔍 Searching for model in Drive...")
         file_list = drive.ListFile({'q': f"'{folder_id}' in parents and trashed=false"}).GetList()
         for file in file_list:
             if file['title'] == model_filename:
@@ -36,3 +41,6 @@ def download_model(model_filename="model.json", folder_id=None):
 
     except Exception as e:
         raise RuntimeError(f"❌ Failed to download model: {e}")
+    finally:
+        if os.path.exists("temp_service_account.json"):
+            os.remove("temp_service_account.json")
