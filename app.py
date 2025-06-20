@@ -3,7 +3,6 @@ import pandas as pd
 import os
 import json
 from datetime import datetime
-
 from model import generate_trade_signal, load_model, build_features
 from data import get_macro_data, get_price_data
 from utils import load_secrets
@@ -23,6 +22,9 @@ drive_id = secrets.get("GDRIVE_FOLDER_ID")
 # Diagnostics
 st.write("🔑 FRED key loaded:", fred_key is not None)
 st.write("📦 GDrive folder ID loaded:", drive_id is not None)
+
+st.write("🔍 Secrets loaded:", st.secrets.keys())
+st.write("✅ FRED key sample:", st.secrets.get("FRED_API_KEY", "❌ Missing"))
 
 # Ensure model is available
 try:
