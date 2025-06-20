@@ -1,9 +1,11 @@
 streamlit
 pandas
 numpy
-matplotlib
 xgboost
-yfinance
-requests
 scikit-learn
-PyDrive2
+pydrive2
+matplotlib
+shap
+pdfkit
+plotly
+python-dotenv

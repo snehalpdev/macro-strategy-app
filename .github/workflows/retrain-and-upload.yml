@@ -1,0 +1,35 @@
+name: Weekly Model Retrain + Google Drive Upload
+
+on:
+  schedule:
+    - cron: "0 3 * * 0"  # Sundays at 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+
+    env:
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Decode service account key
+        run: |
+          echo "${{ secrets.GDRIVE_CREDENTIALS_JSON }}" | base64 --decode > service_account.json
+        shell: bash
+
+      - name: Run retrain script
+        run: python train_pipeline.py

@@ -1,2 +1,5 @@
-upload_to_drive.py
+.env
+service_account.json
 client_secrets.json
+logs/
+*.pdf
