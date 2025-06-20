@@ -1,22 +1,42 @@
 import streamlit as st
 import pandas as pd
+import os
+import json
+from datetime import datetime
+
 from model import generate_trade_signal, load_model, build_features
 from data import get_macro_data, get_price_data
 from utils import load_secrets
 from train_pipeline import run_training_pipeline
 from alerts import send_email_alert
 from report_generator import generate_pdf_report, streamlit_download_button
-from datetime import datetime
-import json
-import os
+from gdrive_loader import download_model  # ✅ NEW import
 
 # ----- Setup -----
 st.set_page_config(page_title="Macro Strategy Dashboard", layout="wide", page_icon="📈")
+
+# Load secrets
 secrets = load_secrets()
 fred_key = secrets.get("FRED_API_KEY")
-import streamlit as st
-st.write("🔑 FRED key loaded:", "FRED_API_KEY" in st.secrets)
-st.write("🔍 st.secrets keys:", list(st.secrets.keys()))
+drive_id = secrets.get("GDRIVE_FOLDER_ID")
+
+# Diagnostics
+st.write("🔑 FRED key loaded:", fred_key is not None)
+st.write("📦 GDrive folder ID loaded:", drive_id is not None)
+
+# Ensure model is available
+try:
+    download_model("model.json", folder_id=drive_id)
+except Exception as e:
+    st.error(f"❌ Failed to download model from Drive: {e}")
+    st.stop()
+
+# Load model
+try:
+    model = load_model("model.json")
+except Exception as e:
+    st.error(f"❌ Failed to load model: {e}")
+    st.stop()
 
 # ----- Controls -----
 with st.sidebar:
