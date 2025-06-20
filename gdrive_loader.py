@@ -21,16 +21,7 @@ def download_model(model_filename="model.json", folder_id=None):
         creds_dict = json.loads(base64.b64decode(encoded).decode())
 
         gauth = GoogleAuth()
-        gauth.settings['client_config_backend'] = 'service'
-        gauth.settings['service_config'] = {
-            "client_email": creds_dict["client_email"],
-            "client_id": creds_dict["client_id"],
-            "private_key": creds_dict["private_key"],
-            "private_key_id": creds_dict["private_key_id"],
-            "type": creds_dict["type"]
-        }
-
-        gauth.ServiceAuth()
+        gauth.ServiceAuth(client_json_dict=creds_dict)  # ✅ This is the correct method
         drive = GoogleDrive(gauth)
 
         file_list = drive.ListFile({'q': f"'{folder_id}' in parents and trashed=false"}).GetList()
