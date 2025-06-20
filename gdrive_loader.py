@@ -20,12 +20,9 @@ def download_model(model_filename="model.json", folder_id=None):
 
         creds_dict = json.loads(base64.b64decode(encoded).decode())
 
+        print("🔐 Authenticating with Google Drive...")
         gauth = GoogleAuth()
-        gauth.settings = {
-            "client_config_backend": "service",
-            "service_config": creds_dict
-        }
-        gauth.ServiceAuth()
+        gauth.ServiceAuth(client_json_dict=creds_dict)  # ✅ This is the correct usage
         drive = GoogleDrive(gauth)
 
         print("🔍 Searching for model in Drive...")
