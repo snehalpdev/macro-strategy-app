@@ -18,13 +18,13 @@ def download_model(model_filename="model.json", folder_id=None):
         if not encoded:
             raise EnvironmentError("❌ GDRIVE_CREDENTIALS_JSON not found in environment.")
 
-        creds_path = "temp_service_account.json"
-        with open(creds_path, "w") as f:
-            f.write(base64.b64decode(encoded).decode())
+        creds_dict = json.loads(base64.b64decode(encoded).decode())
 
-        print("🔐 Authenticating with Google Drive...")
         gauth = GoogleAuth()
-        gauth.LoadCredentialsFile(creds_path)  # ✅ This is the correct method
+        gauth.settings = {
+            "client_config_backend": "service",
+            "service_config": creds_dict
+        }
         gauth.ServiceAuth()
         drive = GoogleDrive(gauth)
 
@@ -41,6 +41,3 @@ def download_model(model_filename="model.json", folder_id=None):
 
     except Exception as e:
         raise RuntimeError(f"❌ Failed to download model: {e}")
-    finally:
-        if os.path.exists("temp_service_account.json"):
-            os.remove("temp_service_account.json")
