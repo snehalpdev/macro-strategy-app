@@ -24,7 +24,7 @@ def download_model(model_filename="model.json", folder_id=None):
 
         print("🔐 Authenticating with Google Drive...")
         gauth = GoogleAuth()
-        gauth.LoadServiceConfigFile(creds_path)
+        gauth.LoadCredentialsFile(creds_path)  # ✅ This is the correct method
         gauth.ServiceAuth()
         drive = GoogleDrive(gauth)
 
