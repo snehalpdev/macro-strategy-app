@@ -1,8 +1,8 @@
 import xgboost as xgb
 from sklearn.datasets import load_iris
 from sklearn.model_selection import train_test_split
-from pydrive.auth import GoogleAuth
-from pydrive.drive import GoogleDrive
+from pydrive2.auth import GoogleAuth
+from pydrive2.drive import GoogleDrive
 import os
 
 # Train model
