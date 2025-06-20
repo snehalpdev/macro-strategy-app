@@ -12,10 +12,10 @@ model = xgb.XGBClassifier()
 model.fit(X_train, y_train)
 model.save_model("model.json")
 
-# Upload to Google Drive
+# Upload to Google Drive via service account
 gauth = GoogleAuth()
-gauth.LoadClientConfigFile("client_secrets.json")
-gauth.LocalWebserverAuth() if os.getenv("CI") is None else gauth.CommandLineAuth()
+gauth.LoadSettingsFile("settings.yml")  # <-- refers to your service config
+gauth.ServiceAuth()                      # <-- key step for service accounts
 drive = GoogleDrive(gauth)
 
 file = drive.CreateFile({'title': 'model.json', 'parents': [{'id': os.environ["GDRIVE_FOLDER_ID"]}]})
