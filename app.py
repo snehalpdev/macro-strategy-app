@@ -14,6 +14,8 @@ import os
 st.set_page_config(page_title="Macro Strategy Dashboard", layout="wide", page_icon="📈")
 secrets = load_secrets()
 fred_key = secrets.get("FRED_API_KEY")
+import streamlit as st
+st.write("🔑 FRED key loaded:", "FRED_API_KEY" in st.secrets)
 
 # ----- Controls -----
 with st.sidebar:
