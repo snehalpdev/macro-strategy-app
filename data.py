@@ -4,6 +4,7 @@ from fredapi import Fred
 
 def get_price_data(ticker="SPY", lookback=90):
     try:
+        print(f"🧪 Fetching price data for: {ticker}")  # ← Add this
         df = yf.download(ticker, period=f"{lookback}d", progress=False)
         df = df[["Close"]]
         return df.dropna()
@@ -13,6 +14,7 @@ def get_price_data(ticker="SPY", lookback=90):
 
 def get_macro_data(fred_key):
     try:
+        print(f"🔑 FRED key present: {bool(fred_key)}")  # ← Add this
         fred = Fred(api_key=fred_key)
         indicators = {
             "UNRATE": "Unemployment Rate",

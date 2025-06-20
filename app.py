@@ -33,6 +33,8 @@ with st.sidebar:
 # ----- Load Data -----
 macro_df = get_macro_data(fred_key)
 price_df = get_price_data(ticker, lookback)
+st.write("📊 Price data loaded:", not price_df.empty)
+st.write("🏦 Macro data loaded:", not macro_df.empty)
 
 if price_df.empty or macro_df.empty:
     st.warning("⚠️ Unable to load data. Check ticker or API keys.")
