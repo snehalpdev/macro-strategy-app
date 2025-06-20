@@ -9,3 +9,4 @@ shap
 pdfkit
 plotly
 python-dotenv
+yfinance
