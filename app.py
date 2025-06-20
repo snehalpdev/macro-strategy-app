@@ -16,6 +16,7 @@ secrets = load_secrets()
 fred_key = secrets.get("FRED_API_KEY")
 import streamlit as st
 st.write("🔑 FRED key loaded:", "FRED_API_KEY" in st.secrets)
+st.write("🔍 st.secrets keys:", list(st.secrets.keys()))
 
 # ----- Controls -----
 with st.sidebar:
