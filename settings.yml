@@ -1,3 +1,4 @@
 client_config_backend: service
 service_config:
   client_json_file_path: client_secrets.json
+  client_service_email: macro-strategy-app@macro-srategy-app.iam.gserviceaccount.com
