@@ -1,0 +1,31 @@
+name: Train and Upload Model
+
+on:
+  workflow_dispatch:
+
+jobs:
+  train-upload:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install xgboost scikit-learn pydrive
+
+      - name: Decode service account key
+        run: |
+          echo "${{ secrets.GDRIVE_CREDENTIALS_JSON }}" | base64 -d > client_secrets.json
+
+      - name: Train and upload model
+        run: python train_model.py
+        env:
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
