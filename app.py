@@ -3,7 +3,7 @@ import pandas as pd
 import os
 import json
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 from model import generate_trade_signal, load_model
 from data import get_macro_data, get_price_data
@@ -20,6 +20,11 @@ from components.dashboard_insights import (
     simulate_strategy_vs_hold
 )
 
+# --- Setup ---
+st.set_page_config(page_title="Macro Strategy Dashboard", layout="wide", page_icon="📈")
+secrets = load_secrets()
+fred_key = secrets.get("FRED_API_KEY")
+drive_id = secrets.get("GDRIVE_FOLDER_ID")
 
 def is_market_open():
     now_utc = datetime.utcnow()
@@ -27,13 +32,6 @@ def is_market_open():
     open_time = est.replace(hour=9, minute=30, second=0, microsecond=0)
     close_time = est.replace(hour=16, minute=0, microsecond=0)
     return est.weekday() < 5 and open_time <= est <= close_time
-
-
-st.set_page_config(page_title="Macro Strategy Dashboard", layout="wide", page_icon="📈")
-secrets = load_secrets()
-fred_key = secrets.get("FRED_API_KEY")
-drive_id = secrets.get("GDRIVE_FOLDER_ID")
-
 
 def download_latest_model_for_ticker(ticker, folder_id):
     encoded = os.getenv("GDRIVE_CREDENTIALS_JSON")
@@ -54,22 +52,45 @@ def download_latest_model_for_ticker(ticker, folder_id):
             status, done = downloader.next_chunk()
     return latest["name"]
 
-
+# --- Sidebar UI ---
 with st.sidebar:
     st.header("⚙️ Controls")
-    ticker = st.text_input("Symbol", "SPY")
+    ticker = st.text_input("Symbol", "SPY").strip().upper()
     lookback = st.slider("Lookback (days)", 30, 180, 90)
+
     st.markdown("---")
-    status_text = "🟢 **OPEN**" if is_market_open() else "🔴 **CLOSED**"
-    st.markdown(f"### 📈 Market Status: {status_text}")
+    market_open = is_market_open()
+    st.markdown(f"### 📈 Market Status: {'🟢 OPEN' if market_open else '🔴 CLOSED'}")
+
+    # Refresh Logic
+    now = datetime.utcnow()
+    if "last_fetch" not in st.session_state:
+        st.session_state.last_fetch = None
+    if "cached_price_df" not in st.session_state:
+        st.session_state.cached_price_df = None
+
+    refresh_requested = st.button("🔄 Refresh Now")
+    time_since = (now - st.session_state.last_fetch) if st.session_state.last_fetch else timedelta(minutes=999)
+    data_stale = time_since > timedelta(minutes=5)
+    needs_refresh = refresh_requested or (market_open and data_stale)
+
+    if not market_open:
+        st.caption("🔒 Market is closed. Live data paused.")
+    elif data_stale:
+        st.warning("⚠️ Data may be stale. Auto-refresh happens every 5 minutes.")
+    else:
+        st.caption(f"⏱️ Last refresh: {time_since.total_seconds() / 60:.1f} min ago.")
+
+    # Admin Panel
+    st.markdown("---")
     with st.expander("🛠️ Admin Panel"):
         if st.checkbox("I understand this will overwrite the model"):
-            if st.button("🔁 Retrain Now"):
-                with st.spinner("Retraining and uploading model..."):
+            if st.button("📚 Retrain Now"):
+                with st.spinner("Training and uploading model..."):
                     result = run_training_pipeline(ticker=ticker)
                 st.success(result)
 
-
+# --- Load model ---
 try:
     model_file = download_latest_model_for_ticker(ticker, folder_id=drive_id)
     st.success(f"📥 Model loaded: {model_file}")
@@ -78,29 +99,36 @@ except Exception as e:
     st.error(f"❌ Could not load model: {e}")
     st.stop()
 
-
+# --- Fetch data ---
 macro_df = get_macro_data(fred_key)
-price_df = get_price_data(ticker, lookback)
-if price_df.empty or macro_df.empty:
+if needs_refresh:
+    st.session_state.cached_price_df = get_price_data(ticker, lookback)
+    st.session_state.last_fetch = now
+
+price_df = st.session_state.cached_price_df
+
+if price_df is None or price_df.empty or macro_df.empty:
     st.error("⚠️ Data load failure. Check symbol or API keys.")
     st.stop()
 
-latest_close_date = price_df.index[-1].strftime("%Y-%m-%d")
-latest_close_price = float(price_df["Close"].iloc[-1])
-st.info(f"📌 Latest available close price for **{ticker.upper()}** as of **{latest_close_date}**: **${latest_close_price:.2f}**")
+# --- Latest Price Display ---
+try:
+    latest_close_date = price_df.index[-1].strftime("%Y-%m-%d")
+    latest_close_price = float(price_df["Close"].iloc[-1])
+    st.info(f"📌 Latest available close price for **{ticker.upper()}** as of **{latest_close_date}**: **${latest_close_price:.2f}**")
+except:
+    st.warning("⚠️ Failed to extract last price.")
 
-
+# --- Generate Signal ---
 try:
     regime, signal, confidence = generate_trade_signal(price_df, macro_df)
-    latest_price = float(price_df["Close"].iloc[-1])
-    timestamp = datetime.now().isoformat()
     new_signal = {
-        "timestamp": timestamp,
+        "timestamp": datetime.now().isoformat(),
         "ticker": ticker.upper(),
         "regime": regime,
         "signal": signal,
         "confidence": float(confidence),
-        "price": latest_price
+        "price": latest_close_price
     }
     signal_entry = log_signal_to_jsonl(new_signal)
     display_signal_context(signal_entry, model_file)
@@ -108,7 +136,7 @@ except Exception as e:
     st.error(f"Prediction error: {e}")
     st.stop()
 
-
+# --- Dashboard Tabs ---
 tab1, tab2 = st.tabs(["📊 Dashboard", "📜 Signal History"])
 
 with tab1:
@@ -134,7 +162,6 @@ This chart simulates two paths your capital could take:
 
 📌 No trading fees or slippage are applied — just pure signal-based simulation.
 """)
-
 
 with tab2:
     st.subheader("📜 Signal Log")
