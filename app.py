@@ -88,8 +88,8 @@ try:
             "ticker": ticker,
             "regime": regime,
             "signal": signal,
-            "confidence": confidence,
-            "price": latest_price
+            "confidence": float(confidence),  # ✅ Fixed
+            "price": float(latest_price)      # ✅ Fixed
         }) + "\n")
 
     if confidence > 85:
