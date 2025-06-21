@@ -1,6 +1,8 @@
 .env
-.streamlit/secrets.toml
 service_account.json
 client_secrets.json
-logs/
 *.pdf
+model.json
+*.log
+*.pyc
+__pycache__/

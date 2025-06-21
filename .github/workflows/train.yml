@@ -1,17 +1,18 @@
-name: Weekly Model Retrain + Google Drive Upload
+name: Retrain Model and Upload to Drive
 
 on:
   schedule:
-    - cron: "0 3 * * 0"  # Sundays at 03:00 UTC
-  workflow_dispatch:
+    - cron: '0 3 * * *'  # Runs daily at 03:00 UTC
+  workflow_dispatch:      # Allows manual trigger from GitHub UI
 
 jobs:
-  retrain:
+  train-model:
     runs-on: ubuntu-latest
 
     env:
       FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
       GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+      GDRIVE_CREDENTIALS_JSON: ${{ secrets.GDRIVE_CREDENTIALS_JSON }}
 
     steps:
       - name: Checkout repo
@@ -20,16 +21,12 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
+          python-version: '3.10'
 
       - name: Install dependencies
         run: |
+          pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Decode service account key
-        run: |
-          echo "${{ secrets.GDRIVE_CREDENTIALS_JSON }}" | base64 --decode > service_account.json
-        shell: bash
-
-      - name: Run retrain script
+      - name: Run training pipeline
         run: python train_pipeline.py

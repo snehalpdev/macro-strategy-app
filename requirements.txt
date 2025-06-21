@@ -3,7 +3,6 @@ pandas
 numpy
 xgboost
 scikit-learn
-pydrive2
 matplotlib
 shap
 pdfkit
@@ -11,3 +10,7 @@ plotly
 python-dotenv
 yfinance
 fredapi
+google-api-python-client
+google-auth
+google-auth-httplib2
+google-auth-oauthlib

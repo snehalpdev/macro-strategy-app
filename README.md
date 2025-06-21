@@ -1,166 +1,108 @@
-# 📈 Macro-Aware Trading Dashboard
+# 📈 Market Forecasting ML Pipeline + Streamlit App
 
-An interactive Streamlit dashboard that blends macroeconomic signals and technical price indicators using machine learning to generate real-time trade signals — complete with retraining, explainability, performance tracking, GitHub Actions automation, and branded PDF reports.
+This repository provides a complete pipeline for building and serving a financial classification model. It includes:
 
----
-
-## 🚀 Features
-
-- 💹 Real-time trade signal generator powered by XGBoost
-- 📊 Combines macroeconomic and technical indicators
-- 🔁 Manual model retraining or via GitHub Actions
-- 📬 Email alerts on high-confidence signals (optional)
-- 🧠 SHAP model explainability support
-- 📜 Signal history log with filtering
-- 📈 Strategy vs Buy & Hold equity curve
-- 📄 Branded PDF strategy reports (with cover, metrics, charts)
-- ☁️ Secure Google Drive model upload integration
-- 🌑 Fully themed dark UI with responsive layout
-
----
-
-## 📷 Preview
-
-> _Insert screenshots here showing the dashboard, signal chart, and PDF export_
-
----
-
-## ⚙️ Setup Instructions
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/yourusername/macro-strategy-dashboard.git
-cd macro-strategy-dashboard
-pip install -r requirements.txt
-
-2. Configure Secrets
-Option A: .env (for local CLI scripts)
-Create a .env file
-
-FRED_API_KEY=your_fred_api_key
-GDRIVE_FOLDER_ID=your_google_drive_folder_id
-EMAIL_USERNAME=you@example.com           # optional
-EMAIL_PASSWORD=your_email_password       # optional
-
-Option B: secrets.toml (for Streamlit)
-Create .streamlit/secrets.toml:
-
-FRED_API_KEY = "your_fred_api_key"
-GDRIVE_FOLDER_ID = "your_google_drive_folder_id"
-
-Absolutely — here’s your complete, ready-to-copy README.md file:
-# 📈 Macro-Aware Trading Dashboard
-
-An interactive Streamlit dashboard that blends macroeconomic signals and technical price indicators using machine learning to generate real-time trade signals — complete with retraining, explainability, performance tracking, GitHub Actions automation, and branded PDF reports.
+- 🧠 Weekly model retraining using macroeconomic + market data
+- 📤 Secure model upload to Google Drive with versioning + cleanup
+- 🎯 Interactive prediction app powered by Streamlit
 
 ---
 
 ## 🚀 Features
 
-- 💹 Real-time trade signal generator powered by XGBoost
-- 📊 Combines macroeconomic and technical indicators
-- 🔁 Manual model retraining or via GitHub Actions
-- 📬 Email alerts on high-confidence signals (optional)
-- 🧠 SHAP model explainability support
-- 📜 Signal history log with filtering
-- 📈 Strategy vs Buy & Hold equity curve
-- 📄 Branded PDF strategy reports (with cover, metrics, charts)
-- ☁️ Secure Google Drive model upload integration
-- 🌑 Fully themed dark UI with responsive layout
+- ✅ Model trains weekly via GitHub Actions
+- ✅ Authenticates to Google Drive using a base64-encoded service account
+- ✅ Automatically uploads a timestamped model file
+- ✅ Keeps only the latest N model versions (e.g. last 5)
+- ✅ Easily configurable secrets + local override support
+- ✅ Lightweight Streamlit app for running predictions
 
 ---
 
-## 📷 Preview
-
-> _Insert screenshots here showing the dashboard, signal chart, and PDF export_
-
----
-
-## ⚙️ Setup Instructions
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/yourusername/macro-strategy-dashboard.git
-cd macro-strategy-dashboard
-pip install -r requirements.txt
+## 📁 Project Structure
 
 
-2. Configure Secrets
-Option A: .env (for local CLI scripts)
-Create a .env file:
-FRED_API_KEY=your_fred_api_key
-GDRIVE_FOLDER_ID=your_google_drive_folder_id
-EMAIL_USERNAME=you@example.com           # optional
-EMAIL_PASSWORD=your_email_password       # optional
+. ├── train_pipeline.py          # Main training + upload script ├── app.py                     # Streamlit app for model inference ├── data/                      # Data fetching logic ├── model/                     # Feature engineering + model utils ├── utils.py                   # Secret loading + helper functions ├── requirements.txt ├── .github/workflows/train.yml └── README.md
 
+---
 
-Option B: secrets.toml (for Streamlit)
-Create .streamlit/secrets.toml:
-FRED_API_KEY = "your_fred_api_key"
-GDRIVE_FOLDER_ID = "your_google_drive_folder_id"
+## 🧠 Model Training
 
+The model is an `XGBoost` binary classifier that combines macroeconomic indicators (via FRED) with market technical signals to predict whether the asset will close higher tomorrow.
 
-3. Set Up Google Drive Integration
-- Create a service account on Google Cloud
-- Share your target Drive folder with the service account email
-- Download service_account.json
-- Base64 encode it for GitHub Actions:
-base64 service_account.json > encoded.txt
+Training pipeline includes:
 
+- Price data: return, volatility, momentum
+- Macroeconomic features: selected FRED indicators
+- `model.json` export after training
+- Auto-upload to Google Drive (via API)
+- Cleanup of older model files
 
+Run locally with:
 
-▶️ Run the App
+```bash
+export FRED_API_KEY=your_key
+export GDRIVE_FOLDER_ID=your_drive_folder_id
+export GDRIVE_CREDENTIALS_JSON=base64_encoded_service_account_json
+
+python train_pipeline.py
+
+
+
+🌐 Streamlit App
+The app.py file loads the most recent model and allows you to test predictions with current or hypothetical inputs. Just run:
 streamlit run app.py
 
 
-Then open: http://localhost:8501
+App features:
+- Input sliders for return, volatility, momentum
+- Auto-detection of model file from Drive (or fallback to local)
+- Display of class prediction probabilities
 
-🔁 GitHub Actions: Weekly Retraining
-A workflow at .github/workflows/retrain_and_upload.yml retrains the model and uploads it weekly to Drive.
-Set the following GitHub secrets:
-- FRED_API_KEY
-- GDRIVE_FOLDER_ID
-- GDRIVE_CREDENTIALS_JSON (base64-encoded service_account.json)
+🔐 Required Secrets (GitHub + Local)
+Whether running locally or in GitHub Actions, you'll need these environment variables:
+| Key | Description | 
+| FRED_API_KEY | API key for fetching macroeconomic indicators | 
+| GDRIVE_FOLDER_ID | Google Drive folder ID for uploading models | 
+| GDRIVE_CREDENTIALS_JSON | Base64-encoded Google service account credentials | 
 
-📁 Project Structure
-macro-strategy-dashboard/
-├── app.py                      # Main Streamlit dashboard
-├── model.py                    # Model loading and signal logic
-├── data.py                     # Macro + price data loaders
-├── train_pipeline.py           # Training + Drive upload pipeline
-├── utils.py                    # Secrets loader
-├── alerts.py                   # Email alerts (optional)
-├── report_generator.py         # PDF report generation
-├── logs/                       # Generated signal logs (jsonl)
-├── .streamlit/
-│   ├── config.toml             # UI theming
-│   └── secrets.toml            # Streamlit secrets (optional)
-├── .env                        # Environment variables (gitignored)
-├── .env.template               # Sample for environment setup
-├── requirements.txt            # Project dependencies
-└── .github/
-    └── workflows/
-        └── retrain_and_upload.yml
 
-
+In GitHub, set these under:
+Settings → Secrets and variables → Actions → Repository secrets
+To encode your service account JSON for GitHub:
+base64 service_account.json
 
-🧪 Dependencies
-- streamlit, xgboost, shap, pandas, pdfkit, matplotlib, scikit-learn
-- External tools: wkhtmltopdf (required for PDF generation)
-- Gmail SMTP or similar for alerts (optional)
 
-📬 Contributions
-PRs and feature suggestions are welcome! Fork, clone, and build better trading tools together 📈
 
-🛡 License
-MIT
+🛠 GitHub Actions
+This repository includes a scheduled retraining workflow:
+name: Weekly Model Retrain + Drive Upload
 
-🙏 Acknowledgments
-- FRED API
-- Streamlit
-- SHAP
-- PyDrive2
+on:
+  schedule:
+    - cron: "0 3 * * 0"  # Sundays @ 03:00 UTC
+  workflow_dispatch:
 
-
+
+To manually trigger a run, visit the GitHub Actions tab and click Run workflow.
+
+📂 Model File Naming + Cleanup
+Every upload to Drive is timestamped like:
+model_20250721_145055.json
+
+
+To reduce clutter, only the most recent 5 versions are retained — older models are deleted automatically via the pipeline.
+
+📊 Example Output (from Streamlit App)
+Input: return=0.0031, volatility=0.0164, momentum=1.27
+Prediction:
+⬆️ Chance of upward move tomorrow: 64.2%
+⬇️ Chance of downward move: 35.8%
+
+
+
+✅ Workflow Status
+Model Training
+
+📝 License
+MIT — you’re free to use and remix with attribution.
