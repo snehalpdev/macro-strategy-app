@@ -13,6 +13,12 @@ from report_generator import generate_pdf_report, streamlit_download_button
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
+from components.dashboard_insights import (
+    log_signal_to_jsonl,
+    display_signal_context,
+    plot_price_with_regime,
+    simulate_strategy_vs_hold
+)
 
 # --- Setup ---
 st.set_page_config(page_title="Macro Strategy Dashboard", layout="wide", page_icon="📈")
@@ -21,7 +27,7 @@ secrets = load_secrets()
 fred_key = secrets.get("FRED_API_KEY")
 drive_id = secrets.get("GDRIVE_FOLDER_ID")
 
-# --- Model Loader ---
+# --- Google Drive model loader ---
 def download_latest_model_for_ticker(ticker, folder_id):
     encoded = os.getenv("GDRIVE_CREDENTIALS_JSON")
     creds = json.loads(base64.b64decode(encoded).decode())
@@ -42,7 +48,7 @@ def download_latest_model_for_ticker(ticker, folder_id):
             status, done = downloader.next_chunk()
     return latest["name"]
 
-# --- Sidebar Controls ---
+# --- Sidebar ---
 with st.sidebar:
     st.header("⚙️ Controls")
     ticker = st.text_input("Symbol", "SPY")
@@ -56,7 +62,7 @@ with st.sidebar:
                     result = run_training_pipeline(ticker=ticker)
                 st.success(result)
 
-# --- Download + Load Model ---
+# --- Load model ---
 try:
     model_file = download_latest_model_for_ticker(ticker, folder_id=drive_id)
     st.success(f"📥 Model loaded: {model_file}")
@@ -65,51 +71,52 @@ except Exception as e:
     st.error(f"❌ Could not load model: {e}")
     st.stop()
 
-# --- Load Data ---
+# --- Load macro + price data ---
 macro_df = get_macro_data(fred_key)
 price_df = get_price_data(ticker, lookback)
 if price_df.empty or macro_df.empty:
     st.error("⚠️ Data load failure. Check symbol or API keys.")
     st.stop()
 
-# --- Predict Signal ---
+# --- Predict signal ---
 try:
     regime, signal, confidence = generate_trade_signal(price_df, macro_df)
     latest_price = price_df["Close"].iloc[-1]
     timestamp = datetime.now().isoformat()
 
-    st.subheader("📈 Signal")
-    st.info(f"**Regime:** {regime} | **Signal:** {signal} | **Confidence:** {confidence:.2f}%")
+    new_signal = {
+        "timestamp": timestamp,
+        "ticker": ticker.upper(),
+        "regime": regime,
+        "signal": signal,
+        "confidence": float(confidence),
+        "price": float(latest_price)
+    }
 
-    os.makedirs("logs", exist_ok=True)
-    with open("logs/signal_log.jsonl", "a") as f:
-        f.write(json.dumps({
-            "timestamp": timestamp,
-            "ticker": ticker,
-            "regime": regime,
-            "signal": signal,
-            "confidence": float(confidence),  # ✅ Fixed
-            "price": float(latest_price)      # ✅ Fixed
-        }) + "\n")
+    signal_entry = log_signal_to_jsonl(new_signal)  # ✅ smart deduplication
+    display_signal_context(signal_entry, model_file)
 
-    if confidence > 85:
+    if signal_entry["timestamp"] == timestamp and confidence > 85:
         send_email_alert(signal, confidence, "you@example.com")
 
 except Exception as e:
     st.error(f"Prediction error: {e}")
     st.stop()
 
-# --- Tabs ---
+# --- Dashboard Tabs ---
 tab1, tab2 = st.tabs(["📊 Dashboard", "📜 Signal History"])
 
 with tab1:
     col1, col2 = st.columns([2, 1])
     with col1:
-        st.markdown("**Price History**")
-        st.line_chart(price_df["Close"])
+        st.markdown("#### 📉 Price Chart with Regime Highlights")
+        plot_price_with_regime()
     with col2:
-        st.markdown("**Latest Macro Data**")
+        st.markdown("#### 🧠 Latest Macro Snapshot")
         st.dataframe(macro_df.tail(5), use_container_width=True)
+
+    st.markdown("---")
+    simulate_strategy_vs_hold()
 
 with tab2:
     st.subheader("📜 Signal Log")
