@@ -2,45 +2,47 @@ import streamlit as st
 import pandas as pd
 import os
 import json
+import base64
 from datetime import datetime
-from model import generate_trade_signal, load_model, build_features
+from model import generate_trade_signal, load_model
 from data import get_macro_data, get_price_data
 from utils import load_secrets
 from train_pipeline import run_training_pipeline
 from alerts import send_email_alert
 from report_generator import generate_pdf_report, streamlit_download_button
-from gdrive_loader import download_model  # ✅ NEW import
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
 
-# ----- Setup -----
+# --- Setup ---
 st.set_page_config(page_title="Macro Strategy Dashboard", layout="wide", page_icon="📈")
 
-# Load secrets
 secrets = load_secrets()
 fred_key = secrets.get("FRED_API_KEY")
 drive_id = secrets.get("GDRIVE_FOLDER_ID")
 
-# Diagnostics
-st.write("🔑 FRED key loaded:", fred_key is not None)
-st.write("📦 GDrive folder ID loaded:", drive_id is not None)
+# --- Model Loader ---
+def download_latest_model_for_ticker(ticker, folder_id):
+    encoded = os.getenv("GDRIVE_CREDENTIALS_JSON")
+    creds = json.loads(base64.b64decode(encoded).decode())
+    credentials = service_account.Credentials.from_service_account_info(creds)
+    service = build("drive", "v3", credentials=credentials)
 
-st.write("🔍 Secrets loaded:", st.secrets.keys())
-st.write("✅ FRED key sample:", st.secrets.get("FRED_API_KEY", "❌ Missing"))
+    prefix = f"model_{ticker.upper()}_"
+    query = f"'{folder_id}' in parents and trashed = false and name contains '{prefix}'"
+    files = service.files().list(q=query, fields="files(id, name, createdTime)").execute().get("files", [])
+    if not files:
+        raise FileNotFoundError(f"No model found for {ticker.upper()} in Drive")
+    latest = max(files, key=lambda f: f["createdTime"])
+    request = service.files().get_media(fileId=latest["id"])
+    with open("model.json", "wb") as f:
+        downloader = MediaIoBaseDownload(f, request)
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+    return latest["name"]
 
-# Ensure model is available
-try:
-    download_model("model.json", folder_id=drive_id)
-except Exception as e:
-    st.error(f"❌ Failed to download model from Drive: {e}")
-    st.stop()
-
-# Load model
-try:
-    model = load_model("model.json")
-except Exception as e:
-    st.error(f"❌ Failed to load model: {e}")
-    st.stop()
-
-# ----- Controls -----
+# --- Sidebar Controls ---
 with st.sidebar:
     st.header("⚙️ Controls")
     ticker = st.text_input("Symbol", "SPY")
@@ -48,33 +50,37 @@ with st.sidebar:
 
     st.markdown("---")
     with st.expander("🛠️ Admin Panel"):
-        confirm = st.checkbox("I understand this will overwrite the model")
-        if confirm:
+        if st.checkbox("I understand this will overwrite the model"):
             if st.button("🔁 Retrain Now"):
                 with st.spinner("Retraining and uploading model..."):
-                    result = run_training_pipeline()
+                    result = run_training_pipeline(ticker=ticker)
                 st.success(result)
 
-# ----- Load Data -----
-macro_df = get_macro_data(fred_key)
-price_df = get_price_data(ticker, lookback)
-st.write("📊 Price data loaded:", not price_df.empty)
-st.write("🏦 Macro data loaded:", not macro_df.empty)
-
-if price_df.empty or macro_df.empty:
-    st.warning("⚠️ Unable to load data. Check ticker or API keys.")
+# --- Download + Load Model ---
+try:
+    model_file = download_latest_model_for_ticker(ticker, folder_id=drive_id)
+    st.success(f"📥 Model loaded: {model_file}")
+    model = load_model("model.json")
+except Exception as e:
+    st.error(f"❌ Could not load model: {e}")
     st.stop()
 
-# ----- Signal Prediction -----
+# --- Load Data ---
+macro_df = get_macro_data(fred_key)
+price_df = get_price_data(ticker, lookback)
+if price_df.empty or macro_df.empty:
+    st.error("⚠️ Data load failure. Check symbol or API keys.")
+    st.stop()
+
+# --- Predict Signal ---
 try:
     regime, signal, confidence = generate_trade_signal(price_df, macro_df)
     latest_price = price_df["Close"].iloc[-1]
     timestamp = datetime.now().isoformat()
 
-    st.subheader("📈 Current Signal")
+    st.subheader("📈 Signal")
     st.info(f"**Regime:** {regime} | **Signal:** {signal} | **Confidence:** {confidence:.2f}%")
 
-    # Log signal
     os.makedirs("logs", exist_ok=True)
     with open("logs/signal_log.jsonl", "a") as f:
         f.write(json.dumps({
@@ -86,22 +92,21 @@ try:
             "price": latest_price
         }) + "\n")
 
-    # Optional alert
     if confidence > 85:
-        send_email_alert(signal, confidence, "your@email.com")
+        send_email_alert(signal, confidence, "you@example.com")
 
 except Exception as e:
-    st.error(f"Prediction failed: {e}")
+    st.error(f"Prediction error: {e}")
     st.stop()
 
-# ----- Signal History Tab -----
+# --- Tabs ---
 tab1, tab2 = st.tabs(["📊 Dashboard", "📜 Signal History"])
 
 with tab1:
     col1, col2 = st.columns([2, 1])
     with col1:
         st.markdown("**Price History**")
-        st.line_chart(price_df['Close'])
+        st.line_chart(price_df["Close"])
     with col2:
         st.markdown("**Latest Macro Data**")
         st.dataframe(macro_df.tail(5), use_container_width=True)
@@ -110,42 +115,41 @@ with tab2:
     st.subheader("📜 Signal Log")
     try:
         with open("logs/signal_log.jsonl") as f:
-            data = [json.loads(line) for line in f]
-            df = pd.DataFrame(data)
-            df["timestamp"] = pd.to_datetime(df["timestamp"])
+            rows = [json.loads(line) for line in f]
+        df = pd.DataFrame(rows)
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df = df[df["ticker"].str.upper() == ticker.upper()]
 
-            df["returns"] = 0.0
-            for i in range(len(df) - 1):
-                if df.loc[i, "signal"] == "Buy":
-                    delta = (df.loc[i + 1, "price"] / df.loc[i, "price"]) - 1
-                    df.loc[i + 1, "returns"] = delta
-            df["strategy_equity"] = (1 + df["returns"]).cumprod()
-            df["buy_hold"] = df["price"] / df["price"].iloc[0]
+        df["returns"] = 0.0
+        for i in range(len(df) - 1):
+            if df.loc[i, "signal"] == "Buy":
+                df.loc[i + 1, "returns"] = (df.loc[i + 1, "price"] / df.loc[i, "price"]) - 1
+        df["strategy_equity"] = (1 + df["returns"]).cumprod()
+        df["buy_hold"] = df["price"] / df["price"].iloc[0]
 
-            st.markdown("#### 📈 Strategy vs Benchmark")
-            st.line_chart(df.set_index("timestamp")[["strategy_equity", "buy_hold"]])
+        st.markdown("#### 📈 Strategy vs Buy & Hold")
+        st.line_chart(df.set_index("timestamp")[["strategy_equity", "buy_hold"]])
 
-            st.markdown("#### 📌 Performance Metrics")
-            returns = df["strategy_equity"].pct_change().dropna()
-            metrics = {
-                "Total Return (Strategy)": f"{df['strategy_equity'].iloc[-1] - 1:.2%}",
-                "Total Return (Buy & Hold)": f"{df['buy_hold'].iloc[-1] - 1:.2%}",
-                "Annualized Return": f"{(df['strategy_equity'].iloc[-1]) ** (252 / len(df)) - 1:.2%}",
-                "Volatility": f"{returns.std() * (252 ** 0.5):.2%}",
-                "Sharpe Ratio": f"{returns.mean() / returns.std() * (252 ** 0.5):.2f}",
-                "Max Drawdown": f"{((df['strategy_equity'].cummax() - df['strategy_equity']) / df['strategy_equity'].cummax()).max():.2%}",
-            }
-            for k, v in metrics.items():
-                st.write(f"- **{k}**: {v}")
+        st.markdown("#### 📌 Performance Metrics")
+        returns = df["strategy_equity"].pct_change().dropna()
+        metrics = {
+            "Total Return (Strategy)": f"{df['strategy_equity'].iloc[-1] - 1:.2%}",
+            "Total Return (Buy & Hold)": f"{df['buy_hold'].iloc[-1] - 1:.2%}",
+            "Annualized Return": f"{(df['strategy_equity'].iloc[-1]) ** (252 / len(df)) - 1:.2%}",
+            "Volatility": f"{returns.std() * (252 ** 0.5):.2%}",
+            "Sharpe Ratio": f"{returns.mean() / returns.std() * (252 ** 0.5):.2f}",
+            "Max Drawdown": f"{((df['strategy_equity'].cummax() - df['strategy_equity']) / df['strategy_equity'].cummax()).max():.2%}"
+        }
+        for key, val in metrics.items():
+            st.write(f"- **{key}**: {val}")
 
-            if st.button("📄 Export Strategy Report"):
-                latest = df.iloc[-1]
-                recent = df[["timestamp", "ticker", "regime", "signal", "confidence"]].tail(10)
-                pdf_path = generate_pdf_report(metrics, latest, recent, df)
-                st.markdown(streamlit_download_button(pdf_path), unsafe_allow_html=True)
+        if st.button("📄 Export Strategy Report"):
+            recent = df[["timestamp", "ticker", "regime", "signal", "confidence"]].tail(10)
+            pdf_path = generate_pdf_report(metrics, df.iloc[-1], recent, df)
+            st.markdown(streamlit_download_button(pdf_path), unsafe_allow_html=True)
 
-            st.markdown("#### 🧾 Full Log")
-            st.dataframe(df.sort_values("timestamp", ascending=False), use_container_width=True)
+        st.markdown("#### 🧾 Full Log")
+        st.dataframe(df.sort_values("timestamp", ascending=False), use_container_width=True)
 
     except FileNotFoundError:
-        st.info("No logged signals yet.")
+        st.info("No signal logs yet.")
