@@ -4,6 +4,7 @@ import os
 import json
 import base64
 from datetime import datetime
+import pytz
 from model import generate_trade_signal, load_model
 from data import get_macro_data, get_price_data
 from utils import load_secrets
@@ -18,6 +19,14 @@ from components.dashboard_insights import (
     plot_price_with_regime,
     simulate_strategy_vs_hold
 )
+
+# --- Market Status Helper ---
+def is_market_open():
+    now_utc = datetime.utcnow()
+    est = pytz.utc.localize(now_utc).astimezone(pytz.timezone("US/Eastern"))
+    open_time = est.replace(hour=9, minute=30, second=0, microsecond=0)
+    close_time = est.replace(hour=16, minute=0, microsecond=0)
+    return est.weekday() < 5 and open_time <= est <= close_time
 
 # --- Setup ---
 st.set_page_config(page_title="Macro Strategy Dashboard", layout="wide", page_icon="📈")
@@ -51,6 +60,10 @@ with st.sidebar:
     ticker = st.text_input("Symbol", "SPY")
     lookback = st.slider("Lookback (days)", 30, 180, 90)
     st.markdown("---")
+    # 🕒 Market status
+    market_status = "🟢 **OPEN**" if is_market_open() else "🔴 **CLOSED**"
+    st.markdown(f"### 📈 Market Status: {market_status}")
+
     with st.expander("🛠️ Admin Panel"):
         if st.checkbox("I understand this will overwrite the model"):
             if st.button("🔁 Retrain Now"):
@@ -73,6 +86,11 @@ price_df = get_price_data(ticker, lookback)
 if price_df.empty or macro_df.empty:
     st.error("⚠️ Data load failure. Check symbol or API keys.")
     st.stop()
+
+# 📌 Latest close info
+latest_close_date = price_df.index[-1].strftime("%Y-%m-%d")
+latest_close_price = float(price_df["Close"].iloc[-1])
+st.info(f"📌 Latest available close price for **{ticker.upper()}** as of **{latest_close_date}**: **${latest_close_price:.2f}**")
 
 # --- Generate signal ---
 try:
@@ -169,8 +187,4 @@ with tab2:
             pdf_path = generate_pdf_report(metrics, df.iloc[-1], recent, df)
             st.markdown(streamlit_download_button(pdf_path), unsafe_allow_html=True)
 
-        st.markdown("#### 🧾 Full Log")
-        st.dataframe(df.sort_values("timestamp", ascending=False), use_container_width=True)
-
-    except FileNotFoundError:
-        st.info("No signal logs yet.")
+        st.markdown("#### 🧾 Full
