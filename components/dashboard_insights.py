@@ -20,7 +20,7 @@ def log_signal_to_jsonl(new_entry, log_path="logs/signal_log.jsonl"):
                 last_entry = json.loads(lines[-1])
                 keys = ["ticker", "regime", "signal"]
                 if all(new_entry.get(k) == last_entry.get(k) for k in keys):
-                    return last_entry  # signal unchanged → do not log
+                    return last_entry  # signal unchanged
 
     with open(log_path, "a") as f:
         f.write(json.dumps(new_entry) + "\n")
@@ -38,16 +38,16 @@ def display_signal_context(signal_entry, model_name):
 """)
     st.markdown(f"""
 🧠 Model: `{model_name}`  
-📅 Generated on: `{signal_entry['timestamp']}`  
-💰 Price at signal: `{signal_entry['price']:.2f}`
+📅 Generated: `{signal_entry['timestamp']}`  
+💰 Price: `${signal_entry['price']:.2f}`
 """)
     if is_fresh:
-        st.success("✅ New signal generated and logged.")
+        st.success("✅ New signal recorded.")
     else:
-        st.info("📌 Market unchanged — last signal is still valid.")
+        st.info("📌 Market unchanged — showing latest known signal.")
 
     elapsed = (datetime.now() - datetime.fromisoformat(signal_entry['timestamp'])).total_seconds() / 60
-    st.caption(f"⏱️ Last update: **{elapsed:.1f} min ago**")
+    st.caption(f"⏱️ Last update: **{elapsed:.1f} minutes ago**")
 
 
 def get_last_signal_timestamp(log_path="logs/signal_log.jsonl"):
@@ -60,7 +60,7 @@ def get_last_signal_timestamp(log_path="logs/signal_log.jsonl"):
         return ""
 
 
-# --- 3. Plot price with regime background + buy/sell markers ---
+# --- 3. Regime chart with price and signals ---
 def plot_price_with_regime(log_path="logs/signal_log.jsonl"):
     try:
         with open(log_path) as f:
@@ -70,48 +70,43 @@ def plot_price_with_regime(log_path="logs/signal_log.jsonl"):
         df = df.sort_values("timestamp")
         ticker = df["ticker"].iloc[-1]
 
-        # Fetch price
         start = df["timestamp"].min().strftime("%Y-%m-%d")
-        price_df = yf.download(ticker, start=start)
-        price_df.reset_index(inplace=True)
-        price_df["timestamp"] = pd.to_datetime(price_df["Date"])
+        price_df = yf.download(ticker, start=start, auto_adjust=True)
+        price_df = price_df.reset_index()
+        price_df["timestamp"] = pd.to_datetime(price_df["Date"], errors="coerce")
 
         merged = pd.merge_asof(price_df, df[["timestamp", "regime", "signal"]],
                                on="timestamp", direction="backward")
-
-        colors = {"Bullish": "rgba(76,175,80,0.2)", "Bearish": "rgba(244,67,54,0.2)",
-                  "Neutral": "rgba(255,193,7,0.2)"}
 
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=merged["timestamp"], y=merged["Close"],
                                  mode="lines", name="Price", line=dict(color="black")))
 
-        # Regime shading
-        start_time = None
+        colors = {"Bullish": "rgba(76,175,80,0.2)", "Bearish": "rgba(244,67,54,0.2)", "Neutral": "rgba(255,193,7,0.2)"}
         last_regime = None
+        start_time = None
         for i in range(len(merged)):
-            current = merged.loc[i]
-            if current["regime"] != last_regime:
-                if start_time and last_regime:
-                    fig.add_vrect(x0=start_time, x1=current["timestamp"],
+            curr = merged.iloc[i]
+            if curr["regime"] != last_regime:
+                if last_regime and start_time:
+                    fig.add_vrect(x0=start_time, x1=curr["timestamp"],
                                   fillcolor=colors.get(last_regime, "gray"), opacity=0.2, line_width=0)
-                start_time = current["timestamp"]
-                last_regime = current["regime"]
+                start_time = curr["timestamp"]
+                last_regime = curr["regime"]
         if start_time and last_regime:
             fig.add_vrect(x0=start_time, x1=merged["timestamp"].iloc[-1],
                           fillcolor=colors.get(last_regime, "gray"), opacity=0.2, line_width=0)
 
-        # Buy/Sell markers
         buys = merged[merged["signal"] == "Buy"]
         sells = merged[merged["signal"] == "Sell"]
-        fig.add_trace(go.Scatter(x=buys["timestamp"], y=buys["Close"], mode="markers",
-                                 marker=dict(color="green", symbol="triangle-up", size=10),
-                                 name="Buy Signal"))
-        fig.add_trace(go.Scatter(x=sells["timestamp"], y=sells["Close"], mode="markers",
-                                 marker=dict(color="red", symbol="triangle-down", size=10),
-                                 name="Sell Signal"))
+        fig.add_trace(go.Scatter(x=buys["timestamp"], y=buys["Close"],
+                                 mode="markers", name="Buy Signal",
+                                 marker=dict(symbol="triangle-up", color="green", size=10)))
+        fig.add_trace(go.Scatter(x=sells["timestamp"], y=sells["Close"],
+                                 mode="markers", name="Sell Signal",
+                                 marker=dict(symbol="triangle-down", color="red", size=10)))
 
-        fig.update_layout(title="📊 Price with Regime & Signals",
+        fig.update_layout(title="📊 Price with Regimes & Signals",
                           xaxis_title="Date", yaxis_title="Price", height=400)
         st.plotly_chart(fig, use_container_width=True)
 
@@ -119,7 +114,7 @@ def plot_price_with_regime(log_path="logs/signal_log.jsonl"):
         st.warning(f"Could not render chart: {e}")
 
 
-# --- 4. Simulate performance ---
+# --- 4. Performance simulation ---
 def simulate_strategy_vs_hold(log_path="logs/signal_log.jsonl"):
     try:
         with open(log_path) as f:
@@ -130,12 +125,13 @@ def simulate_strategy_vs_hold(log_path="logs/signal_log.jsonl"):
         ticker = df["ticker"].iloc[-1]
 
         start = df["timestamp"].min().strftime("%Y-%m-%d")
-        price_df = yf.download(ticker, start=start)
-        price_df.reset_index(inplace=True)
-        price_df["timestamp"] = pd.to_datetime(price_df["Date"])
+        price_df = yf.download(ticker, start=start, auto_adjust=True)
+        price_df = price_df.reset_index()
+        price_df["timestamp"] = pd.to_datetime(price_df["Date"], errors="coerce")
 
-        merged = pd.merge_asof(price_df, df[["timestamp", "signal"]], on="timestamp", direction="backward")
-        merged["signal"].fillna(method="ffill", inplace=True)
+        merged = pd.merge_asof(price_df, df[["timestamp", "signal"]],
+                               on="timestamp", direction="backward")
+        merged["signal"].ffill(inplace=True)
         merged["daily_return"] = merged["Close"].pct_change()
         merged["strategy_return"] = np.where(merged["signal"] == "Buy", merged["daily_return"], 0)
         merged["equity_curve"] = (1 + merged["strategy_return"]).cumprod()
@@ -146,9 +142,8 @@ def simulate_strategy_vs_hold(log_path="logs/signal_log.jsonl"):
                                  mode="lines", name="📈 Strategy"))
         fig.add_trace(go.Scatter(x=merged["timestamp"], y=merged["buy_hold_curve"],
                                  mode="lines", name="📊 Buy & Hold", line=dict(dash="dot")))
-
-        fig.update_layout(title="📈 Strategy vs Buy & Hold",
-                          yaxis_title="Cumulative Return", height=400)
+        fig.update_layout(title="📈 Strategy vs Buy & Hold Performance",
+                          xaxis_title="Date", yaxis_title="Cumulative Return", height=400)
         st.plotly_chart(fig, use_container_width=True)
 
     except Exception as e:
