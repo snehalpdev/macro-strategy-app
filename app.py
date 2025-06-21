@@ -8,7 +8,6 @@ from model import generate_trade_signal, load_model
 from data import get_macro_data, get_price_data
 from utils import load_secrets
 from train_pipeline import run_training_pipeline
-from alerts import send_email_alert
 from report_generator import generate_pdf_report, streamlit_download_button
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -78,7 +77,7 @@ if price_df.empty or macro_df.empty:
 # --- Generate signal ---
 try:
     regime, signal, confidence = generate_trade_signal(price_df, macro_df)
-    latest_price = price_df["Close"].iloc[-1]
+    latest_price = float(price_df["Close"].iloc[-1])
     timestamp = datetime.now().isoformat()
     new_signal = {
         "timestamp": timestamp,
@@ -86,12 +85,10 @@ try:
         "regime": regime,
         "signal": signal,
         "confidence": float(confidence),
-        "price": float(latest_price)
+        "price": latest_price
     }
     signal_entry = log_signal_to_jsonl(new_signal)
     display_signal_context(signal_entry, model_file)
-    if signal_entry["timestamp"] == timestamp and confidence > 85:
-        send_email_alert(signal, confidence, "you@example.com")
 except Exception as e:
     st.error(f"Prediction error: {e}")
     st.stop()
@@ -119,18 +116,18 @@ This chart simulates two paths your capital could take:
 
 - **📈 Strategy Line**: What would happen if you only entered the market when the model said **Buy**.  
   - We assume you invest **$1** each time a Buy signal is issued.
-  - You stay invested for **one period** (e.g. until the next signal), then exit.
+  - You stay invested for **one period**, then exit.
   - Returns are compounded over time only during Buy windows.
   - If the model never signals Buy, this line stays flat.
 
 - **📊 Buy & Hold Line**: What would happen if you bought and held the ticker with no strategy.  
-  - No signals or conditions — just full-time exposure to market ups and downs.
+  - No signals — just full-time exposure to market moves.
 
-You can interpret this chart to see if the model adds value through timing:
-- If the **Strategy Line rises above Buy & Hold**, the model is successfully avoiding poor regimes.
-- If it's below or flat, the model may be too cautious or ineffective.
+You can interpret the chart to see if the model adds value:
+- If the **Strategy Line rises above Buy & Hold**, the model successfully avoids bad regimes.
+- If it stays flat or underperforms, it might be too cautious.
 
-🧪 This is a simple simulation — no fees, slippage, or compounding tricks. You can adjust the logic later to model more realistic trade behavior.
+🧪 This simulation doesn’t include trading costs or slippage. It's a clean look at timing performance.
 """)
 
 with tab2:
@@ -154,12 +151,14 @@ with tab2:
 
         st.markdown("#### 📌 Performance Metrics")
         returns = df["strategy_equity"].pct_change().dropna()
+        volatility = returns.std()
+        sharpe_ratio = returns.mean() / volatility * (252 ** 0.5) if volatility > 0 else float("nan")
         metrics = {
             "Total Return (Strategy)": f"{df['strategy_equity'].iloc[-1] - 1:.2%}",
             "Total Return (Buy & Hold)": f"{df['buy_hold'].iloc[-1] - 1:.2%}",
             "Annualized Return": f"{(df['strategy_equity'].iloc[-1]) ** (252 / len(df)) - 1:.2%}",
-            "Volatility": f"{returns.std() * (252 ** 0.5):.2%}",
-            "Sharpe Ratio": f"{returns.mean() / returns.std() * (252 ** 0.5):.2f}",
+            "Volatility": f"{volatility * (252 ** 0.5):.2%}",
+            "Sharpe Ratio": f"{sharpe_ratio:.2f}",
             "Max Drawdown": f"{((df['strategy_equity'].cummax() - df['strategy_equity']) / df['strategy_equity'].cummax()).max():.2%}"
         }
         for key, val in metrics.items():
