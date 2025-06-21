@@ -20,7 +20,7 @@ from components.dashboard_insights import (
     simulate_strategy_vs_hold
 )
 
-# --- Market Status Helper ---
+
 def is_market_open():
     now_utc = datetime.utcnow()
     est = pytz.utc.localize(now_utc).astimezone(pytz.timezone("US/Eastern"))
@@ -28,13 +28,13 @@ def is_market_open():
     close_time = est.replace(hour=16, minute=0, microsecond=0)
     return est.weekday() < 5 and open_time <= est <= close_time
 
-# --- Setup ---
+
 st.set_page_config(page_title="Macro Strategy Dashboard", layout="wide", page_icon="📈")
 secrets = load_secrets()
 fred_key = secrets.get("FRED_API_KEY")
 drive_id = secrets.get("GDRIVE_FOLDER_ID")
 
-# --- Google Drive model loader ---
+
 def download_latest_model_for_ticker(ticker, folder_id):
     encoded = os.getenv("GDRIVE_CREDENTIALS_JSON")
     creds = json.loads(base64.b64decode(encoded).decode())
@@ -54,16 +54,14 @@ def download_latest_model_for_ticker(ticker, folder_id):
             status, done = downloader.next_chunk()
     return latest["name"]
 
-# --- Sidebar Controls ---
+
 with st.sidebar:
     st.header("⚙️ Controls")
     ticker = st.text_input("Symbol", "SPY")
     lookback = st.slider("Lookback (days)", 30, 180, 90)
     st.markdown("---")
-    # 🕒 Market status
-    market_status = "🟢 **OPEN**" if is_market_open() else "🔴 **CLOSED**"
-    st.markdown(f"### 📈 Market Status: {market_status}")
-
+    status_text = "🟢 **OPEN**" if is_market_open() else "🔴 **CLOSED**"
+    st.markdown(f"### 📈 Market Status: {status_text}")
     with st.expander("🛠️ Admin Panel"):
         if st.checkbox("I understand this will overwrite the model"):
             if st.button("🔁 Retrain Now"):
@@ -71,7 +69,7 @@ with st.sidebar:
                     result = run_training_pipeline(ticker=ticker)
                 st.success(result)
 
-# --- Load model ---
+
 try:
     model_file = download_latest_model_for_ticker(ticker, folder_id=drive_id)
     st.success(f"📥 Model loaded: {model_file}")
@@ -80,19 +78,18 @@ except Exception as e:
     st.error(f"❌ Could not load model: {e}")
     st.stop()
 
-# --- Load Data ---
+
 macro_df = get_macro_data(fred_key)
 price_df = get_price_data(ticker, lookback)
 if price_df.empty or macro_df.empty:
     st.error("⚠️ Data load failure. Check symbol or API keys.")
     st.stop()
 
-# 📌 Latest close info
 latest_close_date = price_df.index[-1].strftime("%Y-%m-%d")
 latest_close_price = float(price_df["Close"].iloc[-1])
 st.info(f"📌 Latest available close price for **{ticker.upper()}** as of **{latest_close_date}**: **${latest_close_price:.2f}**")
 
-# --- Generate signal ---
+
 try:
     regime, signal, confidence = generate_trade_signal(price_df, macro_df)
     latest_price = float(price_df["Close"].iloc[-1])
@@ -111,7 +108,7 @@ except Exception as e:
     st.error(f"Prediction error: {e}")
     st.stop()
 
-# --- Dashboard Tabs ---
+
 tab1, tab2 = st.tabs(["📊 Dashboard", "📜 Signal History"])
 
 with tab1:
@@ -132,21 +129,12 @@ with tab1:
 
 This chart simulates two paths your capital could take:
 
-- **📈 Strategy Line**: What would happen if you only entered the market when the model said **Buy**.  
-  - We assume you invest **$1** each time a Buy signal is issued.
-  - You stay invested for **one period**, then exit.
-  - Returns are compounded over time only during Buy windows.
-  - If the model never signals Buy, this line stays flat.
+- **📈 Strategy Line**: Invest only when the model says **Buy**.
+- **📊 Buy & Hold Line**: Always stay in the market.
 
-- **📊 Buy & Hold Line**: What would happen if you bought and held the ticker with no strategy.  
-  - No signals — just full-time exposure to market moves.
-
-You can interpret the chart to see if the model adds value:
-- If the **Strategy Line rises above Buy & Hold**, the model successfully avoids bad regimes.
-- If it stays flat or underperforms, it might be too cautious.
-
-🧪 This simulation doesn’t include trading costs or slippage. It's a clean look at timing performance.
+📌 No trading fees or slippage are applied — just pure signal-based simulation.
 """)
+
 
 with tab2:
     st.subheader("📜 Signal Log")
@@ -187,4 +175,8 @@ with tab2:
             pdf_path = generate_pdf_report(metrics, df.iloc[-1], recent, df)
             st.markdown(streamlit_download_button(pdf_path), unsafe_allow_html=True)
 
-        st.markdown("#### 🧾 Full
+        st.markdown("#### 🧾 Full Signal Log")
+        st.dataframe(df.sort_values("timestamp", ascending=False), use_container_width=True)
+
+    except FileNotFoundError:
+        st.info("No signal logs yet.")
