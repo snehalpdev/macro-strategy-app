@@ -7,6 +7,7 @@ import plotly.graph_objs as go
 from datetime import datetime
 import yfinance as yf
 
+
 def log_signal_to_jsonl(new_entry, log_path="logs/signal_log.jsonl"):
     os.makedirs("logs", exist_ok=True)
     new_entry = {k: float(v) if hasattr(v, "item") else v for k, v in new_entry.items()}
@@ -21,6 +22,7 @@ def log_signal_to_jsonl(new_entry, log_path="logs/signal_log.jsonl"):
     with open(log_path, "a") as f:
         f.write(json.dumps(new_entry) + "\n")
     return new_entry
+
 
 def display_signal_context(signal_entry, model_name):
     st.subheader("📈 Signal")
@@ -42,6 +44,7 @@ def display_signal_context(signal_entry, model_name):
     elapsed = (datetime.now() - datetime.fromisoformat(signal_entry['timestamp'])).total_seconds() / 60
     st.caption(f"⏱️ Last update: **{elapsed:.1f} minutes ago**")
 
+
 def get_last_signal_timestamp(log_path="logs/signal_log.jsonl"):
     try:
         with open(log_path) as f:
@@ -51,25 +54,28 @@ def get_last_signal_timestamp(log_path="logs/signal_log.jsonl"):
     except:
         return ""
 
+
 def _prep_price_df(price_df):
     price_df = price_df.reset_index()
+
     if isinstance(price_df.columns, pd.MultiIndex):
         price_df.columns = price_df.columns.get_level_values(-1)
 
     time_col = next((col for col in ["Date", "date", "Datetime", "index", price_df.columns[0]] if col in price_df.columns), None)
     price_df["timestamp"] = pd.to_datetime(price_df[time_col], errors="coerce")
 
-    # 🔄 Fallback logic
+    if "Close" not in price_df.columns and "Adj Close" in price_df.columns:
+        st.warning("⚠️ 'Close' column missing — using 'Adj Close' instead.")
+        price_df["Close"] = price_df["Adj Close"]
+
     if "Close" not in price_df.columns:
-        if "Adj Close" in price_df.columns:
-            st.warning("⚠️ 'Close' column missing — using 'Adj Close' instead.")
-            price_df["Close"] = price_df["Adj Close"]
-        else:
-            st.warning("📉 Could not find usable 'Close' or 'Adj Close' price data — skipping chart.")
-            return pd.DataFrame()
+        st.warning("📉 Could not find usable 'Close' or 'Adj Close' price data — skipping chart.")
+        return pd.DataFrame()
 
     price_df = price_df[["timestamp", "Close"]].dropna()
+    price_df = price_df.set_index("timestamp")
     return price_df
+
 
 def plot_price_with_regime(log_path="logs/signal_log.jsonl"):
     try:
@@ -83,7 +89,11 @@ def plot_price_with_regime(log_path="logs/signal_log.jsonl"):
 
         price_df = yf.download(ticker, start=start, auto_adjust=True)
         price_df = _prep_price_df(price_df)
+        if price_df.empty:
+            st.info("📭 No price data available to generate the price chart.")
+            return
 
+        price_df = price_df.reset_index()
         merged = pd.merge_asof(price_df, df[["timestamp", "regime", "signal"]],
                                on="timestamp", direction="backward")
 
@@ -122,6 +132,7 @@ def plot_price_with_regime(log_path="logs/signal_log.jsonl"):
     except Exception as e:
         st.warning(f"Could not render chart: {e}")
 
+
 def simulate_strategy_vs_hold(log_path="logs/signal_log.jsonl"):
     try:
         with open(log_path) as f:
@@ -134,9 +145,14 @@ def simulate_strategy_vs_hold(log_path="logs/signal_log.jsonl"):
 
         price_df = yf.download(ticker, start=start, auto_adjust=True)
         price_df = _prep_price_df(price_df)
+        if price_df.empty:
+            st.info("📭 No price data available to simulate performance.")
+            return
 
+        price_df = price_df.reset_index()
         merged = pd.merge_asof(price_df, df[["timestamp", "signal"]],
                                on="timestamp", direction="backward")
+
         merged["signal"] = merged["signal"].ffill()
         merged["daily_return"] = merged["Close"].pct_change()
         merged["strategy_return"] = np.where(merged["signal"] == "Buy", merged["daily_return"], 0)
