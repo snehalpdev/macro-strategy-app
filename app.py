@@ -72,7 +72,7 @@ with st.sidebar:
     refresh_requested = st.button("🔄 Refresh Now")
     time_since = (now - st.session_state.last_fetch) if st.session_state.last_fetch else timedelta(minutes=999)
     data_stale = time_since > timedelta(minutes=5)
-    needs_refresh = refresh_requested or (market_open and data_stale)
+    needs_refresh = refresh_requested or (market_open and data_stale) or (st.session_state.cached_price_df is None)
 
     if not market_open:
         st.caption("🔒 Market is closed. Live data paused.")
