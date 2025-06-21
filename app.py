@@ -54,15 +54,30 @@ def download_latest_model_for_ticker(ticker, folder_id):
 
 # --- Sidebar UI ---
 with st.sidebar:
-    st.header("⚙️ Controls")
-    ticker = st.text_input("Symbol", "SPY").strip().upper()
-    lookback = st.slider("Lookback (days)", 30, 180, 90)
+    st.header("⚙️ Symbol & Model Controls")
+
+    os.makedirs("models", exist_ok=True)
+    model_files = [f for f in os.listdir("models") if f.startswith("model_") and f.endswith(".json")]
+    available_tickers = sorted(list({f.split("_")[1] for f in model_files}))
+    default_symbol = available_tickers[0] if available_tickers else "SPY"
+
+    selected_ticker = st.selectbox("📂 Load Existing Model", available_tickers, index=0) if available_tickers else default_symbol
+    st.caption(f"✅ Using model for `{selected_ticker}`")
+
+    new_ticker = st.text_input("🎯 Train a new symbol", "").strip().upper()
+    retrain_requested = False
+    if new_ticker:
+        st.warning(f"🚧 You’ll need to retrain for `{new_ticker}` before using it.")
+        if st.button("📚 Retrain Now"):
+            retrain_requested = True
+
+    ticker = new_ticker if new_ticker else selected_ticker
+    lookback = st.slider("📅 Lookback Window", 30, 180, 90)
 
     st.markdown("---")
     market_open = is_market_open()
-    st.markdown(f"### 📈 Market Status: {'🟢 OPEN' if market_open else '🔴 CLOSED'}")
+    st.markdown(f"📈 Market Status: {'🟢 OPEN' if market_open else '🔴 CLOSED'}")
 
-    # Refresh Logic
     now = datetime.utcnow()
     if "last_fetch" not in st.session_state:
         st.session_state.last_fetch = None
@@ -80,15 +95,13 @@ with st.sidebar:
         st.warning("⚠️ Data may be stale. Auto-refresh happens every 5 minutes.")
     else:
         st.caption(f"⏱️ Last refresh: {time_since.total_seconds() / 60:.1f} min ago.")
-
-    # Admin Panel
-    st.markdown("---")
-    with st.expander("🛠️ Admin Panel"):
-        if st.checkbox("I understand this will overwrite the model"):
-            if st.button("📚 Retrain Now"):
-                with st.spinner("Training and uploading model..."):
-                    result = run_training_pipeline(ticker=ticker)
-                st.success(result)
+	
+# --- Handle retrain (if requested) ---
+if retrain_requested:
+    with st.spinner("Training and uploading model..."):
+        result = run_training_pipeline(ticker=ticker)
+    st.success(result)
+    st.experimental_rerun()
 
 # --- Load model ---
 try:
@@ -106,20 +119,19 @@ if needs_refresh:
     st.session_state.last_fetch = now
 
 price_df = st.session_state.cached_price_df
-
 if price_df is None or price_df.empty or macro_df.empty:
     st.error("⚠️ Data load failure. Check symbol or API keys.")
     st.stop()
 
-# --- Latest Price Display ---
+# --- Show latest price ---
 try:
     latest_close_date = price_df.index[-1].strftime("%Y-%m-%d")
     latest_close_price = float(price_df["Close"].iloc[-1])
-    st.info(f"📌 Latest available close price for **{ticker.upper()}** as of **{latest_close_date}**: **${latest_close_price:.2f}**")
-except:
-    st.warning("⚠️ Failed to extract last price.")
-
-# --- Generate Signal ---
+    st.info(f"📌 Latest close price for **{ticker.upper()}** as of **{latest_close_date}**: **${latest_close_price:.2f}**")
+except Exception:
+    st.warning("⚠️ Failed to extract last closing price.")
+	
+# --- Generate signal and display context ---
 try:
     regime, signal, confidence = generate_trade_signal(price_df, macro_df)
     new_signal = {
@@ -157,8 +169,8 @@ with tab1:
 
 This chart simulates two paths your capital could take:
 
-- **📈 Strategy Line**: Invest only when the model says **Buy**.
-- **📊 Buy & Hold Line**: Always stay in the market.
+- **📈 Strategy Line**: Invest only when the model says **Buy**
+- **📊 Buy & Hold Line**: Always stay in the market
 
 📌 No trading fees or slippage are applied — just pure signal-based simulation.
 """)
@@ -186,14 +198,17 @@ with tab2:
         returns = df["strategy_equity"].pct_change().dropna()
         volatility = returns.std()
         sharpe = returns.mean() / volatility * (252 ** 0.5) if volatility > 0 else float("nan")
+        max_dd = ((df["strategy_equity"].cummax() - df["strategy_equity"]) / df["strategy_equity"].cummax()).max()
+
         metrics = {
             "Total Return (Strategy)": f"{df['strategy_equity'].iloc[-1] - 1:.2%}",
             "Total Return (Buy & Hold)": f"{df['buy_hold'].iloc[-1] - 1:.2%}",
             "Annualized Return": f"{(df['strategy_equity'].iloc[-1]) ** (252 / len(df)) - 1:.2%}",
             "Volatility": f"{volatility * (252 ** 0.5):.2%}",
             "Sharpe Ratio": f"{sharpe:.2f}",
-            "Max Drawdown": f"{((df['strategy_equity'].cummax() - df['strategy_equity']) / df['strategy_equity'].cummax()).max():.2%}"
+            "Max Drawdown": f"{max_dd:.2%}"
         }
+
         for key, val in metrics.items():
             st.write(f"- **{key}**: {val}")
 
