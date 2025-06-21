@@ -22,7 +22,6 @@ from components.dashboard_insights import (
 
 # --- Setup ---
 st.set_page_config(page_title="Macro Strategy Dashboard", layout="wide", page_icon="📈")
-
 secrets = load_secrets()
 fred_key = secrets.get("FRED_API_KEY")
 drive_id = secrets.get("GDRIVE_FOLDER_ID")
@@ -33,7 +32,6 @@ def download_latest_model_for_ticker(ticker, folder_id):
     creds = json.loads(base64.b64decode(encoded).decode())
     credentials = service_account.Credentials.from_service_account_info(creds)
     service = build("drive", "v3", credentials=credentials)
-
     prefix = f"model_{ticker.upper()}_"
     query = f"'{folder_id}' in parents and trashed = false and name contains '{prefix}'"
     files = service.files().list(q=query, fields="files(id, name, createdTime)").execute().get("files", [])
@@ -48,12 +46,11 @@ def download_latest_model_for_ticker(ticker, folder_id):
             status, done = downloader.next_chunk()
     return latest["name"]
 
-# --- Sidebar ---
+# --- Sidebar Controls ---
 with st.sidebar:
     st.header("⚙️ Controls")
     ticker = st.text_input("Symbol", "SPY")
     lookback = st.slider("Lookback (days)", 30, 180, 90)
-
     st.markdown("---")
     with st.expander("🛠️ Admin Panel"):
         if st.checkbox("I understand this will overwrite the model"):
@@ -71,19 +68,18 @@ except Exception as e:
     st.error(f"❌ Could not load model: {e}")
     st.stop()
 
-# --- Load macro + price data ---
+# --- Load Data ---
 macro_df = get_macro_data(fred_key)
 price_df = get_price_data(ticker, lookback)
 if price_df.empty or macro_df.empty:
     st.error("⚠️ Data load failure. Check symbol or API keys.")
     st.stop()
 
-# --- Predict signal ---
+# --- Generate signal ---
 try:
     regime, signal, confidence = generate_trade_signal(price_df, macro_df)
     latest_price = price_df["Close"].iloc[-1]
     timestamp = datetime.now().isoformat()
-
     new_signal = {
         "timestamp": timestamp,
         "ticker": ticker.upper(),
@@ -92,13 +88,10 @@ try:
         "confidence": float(confidence),
         "price": float(latest_price)
     }
-
-    signal_entry = log_signal_to_jsonl(new_signal)  # ✅ smart deduplication
+    signal_entry = log_signal_to_jsonl(new_signal)
     display_signal_context(signal_entry, model_file)
-
     if signal_entry["timestamp"] == timestamp and confidence > 85:
         send_email_alert(signal, confidence, "you@example.com")
-
 except Exception as e:
     st.error(f"Prediction error: {e}")
     st.stop()
@@ -117,6 +110,28 @@ with tab1:
 
     st.markdown("---")
     simulate_strategy_vs_hold()
+
+    with st.expander("ℹ️ What does this chart mean?"):
+        st.markdown("""
+### 📊 Strategy vs Buy & Hold Explained
+
+This chart simulates two paths your capital could take:
+
+- **📈 Strategy Line**: What would happen if you only entered the market when the model said **Buy**.  
+  - We assume you invest **$1** each time a Buy signal is issued.
+  - You stay invested for **one period** (e.g. until the next signal), then exit.
+  - Returns are compounded over time only during Buy windows.
+  - If the model never signals Buy, this line stays flat.
+
+- **📊 Buy & Hold Line**: What would happen if you bought and held the ticker with no strategy.  
+  - No signals or conditions — just full-time exposure to market ups and downs.
+
+You can interpret this chart to see if the model adds value through timing:
+- If the **Strategy Line rises above Buy & Hold**, the model is successfully avoiding poor regimes.
+- If it's below or flat, the model may be too cautious or ineffective.
+
+🧪 This is a simple simulation — no fees, slippage, or compounding tricks. You can adjust the logic later to model more realistic trade behavior.
+""")
 
 with tab2:
     st.subheader("📜 Signal Log")
