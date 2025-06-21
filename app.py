@@ -152,13 +152,13 @@ with tab2:
         st.markdown("#### 📌 Performance Metrics")
         returns = df["strategy_equity"].pct_change().dropna()
         volatility = returns.std()
-        sharpe_ratio = returns.mean() / volatility * (252 ** 0.5) if volatility > 0 else float("nan")
+        sharpe = returns.mean() / volatility * (252 ** 0.5) if volatility > 0 else float("nan")
         metrics = {
             "Total Return (Strategy)": f"{df['strategy_equity'].iloc[-1] - 1:.2%}",
             "Total Return (Buy & Hold)": f"{df['buy_hold'].iloc[-1] - 1:.2%}",
             "Annualized Return": f"{(df['strategy_equity'].iloc[-1]) ** (252 / len(df)) - 1:.2%}",
             "Volatility": f"{volatility * (252 ** 0.5):.2%}",
-            "Sharpe Ratio": f"{sharpe_ratio:.2f}",
+            "Sharpe Ratio": f"{sharpe:.2f}",
             "Max Drawdown": f"{((df['strategy_equity'].cummax() - df['strategy_equity']) / df['strategy_equity'].cummax()).max():.2%}"
         }
         for key, val in metrics.items():
